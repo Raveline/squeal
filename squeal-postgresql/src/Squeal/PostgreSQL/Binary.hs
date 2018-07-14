@@ -400,49 +400,8 @@ instance FromValue 'PGinterval DiffTime where
   fromValue = Decoding.interval_int
 instance FromValue 'PGjson Value where fromValue = Decoding.json_ast
 instance FromValue 'PGjsonb Value where fromValue = Decoding.jsonb_ast
-instance FromValue pg y
-  => FromValue ('PGvararray ('Null pg)) (Vector (Maybe y)) where
-    fromValue = Decoding.array
-      (Decoding.dimensionArray Vector.replicateM
-        (Decoding.nullableValueArray (fromValue @pg)))
-instance FromValue pg y
-  => FromValue ('PGvararray ('NotNull pg)) (Vector y) where
-    fromValue = Decoding.array
-      (Decoding.dimensionArray Vector.replicateM
-        (Decoding.valueArray (fromValue @pg)))
-fromVector
-  :: forall x xs. (All ((~) x) xs, SListI xs)
-  => Vector x
-  -> Decoding.Value (NP I xs)
-fromVector vec = case fromList (Vector.toList vec) of
-  Nothing -> failure "fromVector: unexpected length"
-  Just xs -> return $ hcmap (Proxy :: Proxy ((~) x)) (I . unK) xs
-instance
-  ( IsProductType hask ys
-  , All ((~) y) ys
-  , len ~ Length ys
-  , FromValue pg y
-  ) => FromValue ('PGfixarray len ('NotNull pg)) hask where
-    fromValue =
-      let
-        vectorValue = Decoding.array
-          (Decoding.dimensionArray Vector.replicateM
-            (Decoding.valueArray (fromValue @pg)))
-      in
-        fmap (to . SOP . Z) (fromVector @y =<< vectorValue)
-instance
-  ( IsProductType hask ys
-  , All ((~) (Maybe y)) ys
-  , len ~ Length ys
-  , FromValue pg y
-  ) => FromValue ('PGfixarray len ('Null pg)) hask where
-    fromValue =
-      let
-        vectorValue = Decoding.array
-          (Decoding.dimensionArray Vector.replicateM
-            (Decoding.nullableValueArray (fromValue @pg)))
-      in
-        fmap (to . SOP . Z) (fromVector @(Maybe y) =<< vectorValue)
+instance FromArray pg y => FromValue pg y where
+  fromValue = Decoding.array (fromArray @pg @y)
 instance
   ( IsEnumType y
   , HasDatatypeInfo y
@@ -512,6 +471,34 @@ instance FromValue pg y
       K Nothing -> Right $ P Nothing
       K (Just bytestring) -> P . Just <$>
         Decoding.valueParser (fromValue @pg) bytestring
+
+class FromArray pg y where fromArray :: Decoding.Array y
+instance {-# OVERLAPPING #-} FromArray pg y
+  => FromArray ('PGvararray pg) (Vector y) where
+    fromArray = Decoding.dimensionArray Vector.replicateM (fromArray @pg)
+fromVector
+  :: forall x xs. (All ((~) x) xs, SListI xs)
+  => Vector x
+  -> (NP I xs)
+fromVector vec = case fromList (Vector.toList vec) of
+  Nothing -> error "fromVector: unexpected length"
+  Just xs -> hcmap (Proxy :: Proxy ((~) x)) (I . unK) xs
+instance {-# OVERLAPPING #-}
+  ( IsProductType hask ys
+  , All ((~) y) ys
+  , len ~ Length ys
+  , FromArray pg y
+  ) => FromArray ('PGfixarray len ('NotNull pg)) hask where
+    fromArray =
+      let
+        vectorArray =
+          Decoding.dimensionArray Vector.replicateM (fromArray @pg)
+      in
+        fmap (to . SOP . Z) (fromVector @y <$> vectorArray)
+instance {-# OVERLAPPABLE #-} FromValue pg y => FromArray pg y where
+  fromArray = Decoding.valueArray (fromValue @pg)
+instance FromValue pg y => FromArray pg (Maybe y) where
+  fromArray = Decoding.nullableValueArray (fromValue @pg)
 
 -- | A `FromRow` constraint generically sequences the parsings of the columns
 -- of a `RelationType` into the fields of a record `Type` provided they have
