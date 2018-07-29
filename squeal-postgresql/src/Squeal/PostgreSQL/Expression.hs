@@ -1216,11 +1216,19 @@ vararray ty = UnsafeTypeExpression $ renderTypeExpression ty <> "[]"
 -- >>> renderTypeExpression (fixarray @2 json)
 -- "json[2]"
 fixarray
-  :: forall n schema nullity pg. KnownNat n
+  :: forall ns schema nullity pg.
+    ( Generics.SOP.All KnownNat ns
+    , SListI ns
+    )
   => TypeExpression schema pg
-  -> TypeExpression schema (nullity ('PGfixarray n pg))
+  -> TypeExpression schema (nullity ('PGfixarray ns pg))
 fixarray ty = UnsafeTypeExpression $
-  renderTypeExpression ty <> "[" <> renderNat @n <> "]"
+  renderTypeExpression ty <> "[" <> dims <> "]"
+  where
+    dims = renderAll @KnownNat @ns renderDim
+
+    renderDim :: forall n. KnownNat n => K ByteString n
+    renderDim = K (renderNat @n)
 
 -- | `pgtype` is a demoted version of a `PGType`
 class PGTyped schema (ty :: NullityType) where
@@ -1250,6 +1258,6 @@ instance PGTyped schema (nullity 'PGjsonb) where pgtype = jsonb
 instance PGTyped schema ty
   => PGTyped schema (nullity ('PGvararray ty)) where
     pgtype = vararray (pgtype @schema @ty)
-instance (KnownNat n, PGTyped schema ty)
-  => PGTyped schema (nullity ('PGfixarray n ty)) where
-    pgtype = fixarray @n (pgtype @schema @ty)
+instance (Generics.SOP.All KnownNat ns, PGTyped schema ty)
+  => PGTyped schema (nullity ('PGfixarray ns ty)) where
+    pgtype = fixarray @ns (pgtype @schema @ty)

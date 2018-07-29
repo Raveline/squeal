@@ -247,24 +247,24 @@ toVector :: (All ((~) x) xs) => NP I xs -> Vector x
 toVector = \case
   Nil -> Vector.empty
   I x :* xs -> Vector.singleton x <> toVector xs
-instance
-  ( HasOid pg
-  , ToParam x pg
-  , IsProductType hask xs
-  , All ((~) x) xs
-  , len ~ Length xs
-  ) => ToParam hask ('PGfixarray len ('NotNull pg)) where
-    toParam = K . Encoding.array_vector
-      (oid @pg) (unK . toParam @x @pg) . toVector . unZ . unSOP . from
-instance
-  ( HasOid pg
-  , ToParam x pg
-  , IsProductType hask xs
-  , All ((~) (Maybe x)) xs
-  , len ~ Length xs
-  ) => ToParam hask ('PGfixarray len ('Null pg)) where
-    toParam = K . Encoding.nullableArray_vector
-      (oid @pg) (unK . toParam @x @pg) . toVector . unZ . unSOP . from
+-- instance
+--   ( HasOid pg
+--   , ToParam x pg
+--   , IsProductType hask xs
+--   , All ((~) x) xs
+--   , len ~ Length xs
+--   ) => ToParam hask ('PGfixarray len ('NotNull pg)) where
+--     toParam = K . Encoding.array_vector
+--       (oid @pg) (unK . toParam @x @pg) . toVector . unZ . unSOP . from
+-- instance
+--   ( HasOid pg
+--   , ToParam x pg
+--   , IsProductType hask xs
+--   , All ((~) (Maybe x)) xs
+--   , len ~ Length xs
+--   ) => ToParam hask ('PGfixarray len ('Null pg)) where
+--     toParam = K . Encoding.nullableArray_vector
+--       (oid @pg) (unK . toParam @x @pg) . toVector . unZ . unSOP . from
 instance
   ( IsEnumType x
   , HasDatatypeInfo x
@@ -327,6 +327,20 @@ instance
 
       in
         composite . encoders . toRecord
+
+class ToArray x pg where toArray :: x -> K Encoding.Array pg
+instance ToParam x pg => ToArray x ( 'PGfixarray '[] ('NotNull pg)) where
+  toArray = K . Encoding.encodingArray . unK . toParam @x @pg
+instance ToParam x pg => ToArray (Maybe x) ( 'PGfixarray '[] ('Null pg)) where
+  toArray = maybe (K Encoding.nullArray)
+   (K . Encoding.encodingArray . unK . toParam @x @pg)
+-- instance
+--   ( IsProductType x xns
+--   , (All ((~) xn)) xns
+--   , n ~ Length xns
+--   , ToArray xn ( 'PGfixarray ns pg)
+--   ) => ToArray x ( 'PGfixarray (n ': ns) pg) where
+--   toArray = K . Encoding.dimensionArray id (unK . toArray @xn @( 'PGfixarray n pg))
 
 class HasAliasedOid (field :: (Symbol, NullityType)) where
   aliasedOid :: Word32
@@ -483,18 +497,18 @@ fromVector
 fromVector vec = case fromList (Vector.toList vec) of
   Nothing -> error "fromVector: unexpected length"
   Just xs -> hcmap (Proxy :: Proxy ((~) x)) (I . unK) xs
-instance {-# OVERLAPPING #-}
-  ( IsProductType hask ys
-  , All ((~) y) ys
-  , len ~ Length ys
-  , FromArray pg y
-  ) => FromArray ('PGfixarray len ('NotNull pg)) hask where
-    fromArray =
-      let
-        vectorArray =
-          Decoding.dimensionArray Vector.replicateM (fromArray @pg)
-      in
-        fmap (to . SOP . Z) (fromVector @y <$> vectorArray)
+-- instance {-# OVERLAPPING #-}
+--   ( IsProductType hask ys
+--   , All ((~) y) ys
+--   , len ~ Length ys
+--   , FromArray pg y
+--   ) => FromArray ('PGfixarray len ('NotNull pg)) hask where
+--     fromArray =
+--       let
+--         vectorArray =
+--           Decoding.dimensionArray Vector.replicateM (fromArray @pg)
+--       in
+--         fmap (to . SOP . Z) (fromVector @y <$> vectorArray)
 instance {-# OVERLAPPABLE #-} FromValue pg y => FromArray pg y where
   fromArray = Decoding.valueArray (fromValue @pg)
 instance FromValue pg y => FromArray pg (Maybe y) where

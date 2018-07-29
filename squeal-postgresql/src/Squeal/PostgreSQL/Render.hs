@@ -10,8 +10,10 @@ Rendering helper functions.
 
 {-# LANGUAGE
     AllowAmbiguousTypes
+  , ConstraintKinds
   , FlexibleContexts
   , MagicHash
+  , MonoLocalBinds
   , OverloadedStrings
   , PolyKinds
   , RankNTypes
@@ -29,6 +31,7 @@ module Squeal.PostgreSQL.Render
   , renderCommaSeparatedMaybe
   , renderNat
   , renderSymbol
+  , renderAll
   , RenderSQL (..)
   , printSQL
   ) where
@@ -89,6 +92,14 @@ renderNat = fromString (show (natVal' (proxy# :: Proxy# n)))
 -- | Render a promoted `Symbol`.
 renderSymbol :: forall s. KnownSymbol s => ByteString
 renderSymbol = fromString (symbolVal' (proxy# :: Proxy# s))
+
+-- | Render a list of `Nat`s or `Symbol`s for instance.
+renderAll
+  :: forall c as. All c as
+  => (forall a. c a => K ByteString a)
+  -> ByteString
+renderAll render
+  = commaSeparated (hcollapse (hcpure (Proxy @c) render :: NP (K ByteString) as))
 
 -- | A class for rendering SQL
 class RenderSQL sql where
